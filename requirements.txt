@@ -1,0 +1,14 @@
+torch>=2.0.0
+transformers
+accelerate
+mamba-ssm
+causal-conv1d==1.0.0 # seems like later versions of causal-conv1d cause an issue related to an incorrect argument being passed in (parameter vs tensor); perhaps it is also an issue caused by a later version of pytorch (?)
+gymnasium[mujoco]
+imageio-ffmpeg
+ffmpeg
+imageio
+moviepy
+
+# install these for v3 and below environments
+# mujoco-py
+# cython<3 # mujoco-py doesn't like cython 3 and above
