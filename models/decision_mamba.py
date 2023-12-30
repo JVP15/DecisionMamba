@@ -25,7 +25,7 @@ class TrainableDT(DecisionTransformerModel):
     def original_forward(self, **kwargs):
         return super().forward(**kwargs)
 
-    def get_action(self, states, actions, rewards, returns_to_go, timesteps):
+    def get_action(self, states, actions, rewards, returns_to_go, timesteps, max_length = None):
         # This implementation does not condition on past rewards
 
         states = states.reshape(1, -1, self.config.state_dim)
@@ -33,11 +33,14 @@ class TrainableDT(DecisionTransformerModel):
         returns_to_go = returns_to_go.reshape(1, -1, 1)
         timesteps = timesteps.reshape(1, -1)
 
-        states = states[:, -self.config.max_length:]
-        actions = actions[:, -self.config.max_length:]
-        returns_to_go = returns_to_go[:, -self.config.max_length:]
-        timesteps = timesteps[:, -self.config.max_length:]
-        padding = self.config.max_length - states.shape[1]
+        max_length = self.config.max_length if max_length is None else max_length
+
+        states = states[:, -max_length:]
+        actions = actions[:, -max_length:]
+        returns_to_go = returns_to_go[:, -max_length:]
+        timesteps = timesteps[:, -max_length:]
+        padding = max_length - states.shape[1]
+
         # pad all tokens to sequence length
         attention_mask = torch.cat([torch.zeros(padding), torch.ones(states.shape[1])])
         attention_mask = attention_mask.to(dtype=torch.long, device=states.device).reshape(1, -1)
@@ -65,7 +68,7 @@ class TrainableDM(TrainableDT):
 
         self.mamba = MixerModel(
             d_model=config.hidden_size,
-            n_layer=6,  # params from mamba-130m
+            n_layer=24,  # params from mamba-130m
             ssm_cfg={},
             rms_norm=True,
             residual_in_fp32=True,

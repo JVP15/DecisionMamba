@@ -76,6 +76,7 @@ def evaluate_episode_rtg(
         device='cuda',
         target_return=None,
         mode='normal',
+        max_length=None
     ):
 
     model.eval()
@@ -113,6 +114,7 @@ def evaluate_episode_rtg(
             rewards.to(dtype=torch.float32),
             target_return.to(dtype=torch.float32),
             timesteps.to(dtype=torch.long),
+            max_length=max_length,
         )
         actions[-1] = action
         action = action.detach().cpu().numpy()
