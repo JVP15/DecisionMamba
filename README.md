@@ -41,4 +41,4 @@ If it is coming from a system path, not Anaconda, you probably shouldn't delete 
 ### Scratchpad
 
 Okay so the recurrent mode is slower than the normal mode for some reason, even though when the sizes are about the same for text generation, inference for mamba is about as fast as inference for DT
-and it is a lot faster when the graph is cached (like, 6x). 
+and it is a lot faster when the graph is cached (like, 6x).

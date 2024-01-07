@@ -93,8 +93,8 @@ class TrainableDM(TrainableDT):
         action = super().get_action(states, actions, rewards, returns_to_go, timesteps, max_length=max_length)
 
         if self.is_recurrent:
-            self.last_action = action # TODO: will have to change this to deal with batched inputs
-            self.last_timestep = timesteps[-1].reshape(1, 1)
+            self.last_action = action.detach().clone() # TODO: will have to change this to deal with batched inputs
+            self.last_timestep = timesteps[-1].reshape(1, 1).detach().clone()
 
         return action
 
@@ -118,7 +118,7 @@ class TrainableDM(TrainableDT):
     def _recurrent_forward(self, inputs_embeds):
         # for recurrent generation, inputs embeds should look like: [[RTG_i, S_i, A_null], ...] and have the shape [batch_size, 3, hidden_size]...
         # ... A_null is there b/c the original DT code requires *something* there for an action (even though it isn't even factored into the computation), so we can just skip it
-        inputs_embeds = inputs_embeds[:, 1:] # now it is [[RTG_i, S_i], ...], shape [batch_size, 2, hidden_size]
+        inputs_embeds = inputs_embeds[:, :2] # now it is [[RTG_i, S_i], ...], shape [batch_size, 2, hidden_size]
 
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
@@ -136,19 +136,20 @@ class TrainableDM(TrainableDT):
                 action_embedding = self.embed_action(self.last_action)
                 action_embedding = action_embedding + time_embeddings
 
+                action_embedding = self.embed_ln(action_embedding)
+
                 # prepend the last action to the inputs_embeds
                 inputs_embeds = torch.cat([action_embedding, inputs_embeds], dim=1)  # now it is [[A_{i-1}, RTG_i, S_i], ...], shape [batch_size, 3, hidden_size]
 
             #start.record()
-
-            for i in range(inputs_embeds.shape[1] - 1):
+            for i in range(inputs_embeds.shape[1]):
                 hidden_states = self.mamba(inputs_embeds[:, i:i+1], inference_params=self.inference_params) # shape [batch_size, 1, hidden_size]
                 self.inference_params.seqlen_offset += hidden_states.shape[1]
+
 
             #end.record()
             #torch.cuda.synchronize()
             #print(f"Time to run recurrent forward: {start.elapsed_time(end)}") # takes ~3 for the most part
-
         # the DT expects hidden_states to be shaped like [batch_size, 3, hidden_size] where the action preds are in [:, 1, :] and the state/reward preds are in [:, 2, :], so we just repeat
         hidden_states = hidden_states.repeat(1, 3, 1)
 

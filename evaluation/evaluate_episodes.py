@@ -131,7 +131,7 @@ def evaluate_episode_recurrent(
             timesteps.to(dtype=torch.long),
             max_length=1,
         )
-        actions = action
+        #actions = action
         action = action.detach().cpu().numpy()
 
         state, reward, terminated, truncated, info = env.step(action)
@@ -139,6 +139,7 @@ def evaluate_episode_recurrent(
         cur_state = torch.from_numpy(state).to(device=device).reshape(1, state_dim)
         states = cur_state
         rewards[-1] = reward
+        timesteps += 1
 
         if mode != 'delayed':
             pred_return = target_return[0,-1] - (reward/scale)
