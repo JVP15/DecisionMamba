@@ -43,6 +43,7 @@ class TrainableDT(DecisionTransformerModel):
         returns_to_go = returns_to_go[:, -max_length:]
         timesteps = timesteps[:, -max_length:]
         padding = max_length - states.shape[1]
+        padding = 0
 
         # pad all tokens to sequence length
         attention_mask = torch.cat([torch.zeros(padding), torch.ones(states.shape[1])])
@@ -119,11 +120,15 @@ class TrainableDM(TrainableDT):
         # ... A_null is there b/c the original DT code requires *something* there for an action (even though it isn't even factored into the computation), so we can just skip it
         inputs_embeds = inputs_embeds[:, 1:] # now it is [[RTG_i, S_i], ...], shape [batch_size, 2, hidden_size]
 
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+
+
         # if we are at the beginning of the sequence, we just run the model through long the original sequence is
         if self.inference_params.seqlen_offset == 0:
             hidden_states = self.mamba(inputs_embeds, inference_params=self.inference_params) # shape [batch_size, 2, hidden_size]
             hidden_states = hidden_states[:, 1:] # shape [batch_size, 1, hidden_size] to match when we are not at the beginning of the sequence
-            self.inference_params.seqlen_offset += hidden_states.shape[1]
+            self.inference_params.seqlen_offset += inputs_embeds.shape[1]
         else:
             if self.last_action is not None:
                 # encode the action
@@ -134,9 +139,15 @@ class TrainableDM(TrainableDT):
                 # prepend the last action to the inputs_embeds
                 inputs_embeds = torch.cat([action_embedding, inputs_embeds], dim=1)  # now it is [[A_{i-1}, RTG_i, S_i], ...], shape [batch_size, 3, hidden_size]
 
+            #start.record()
+
             for i in range(inputs_embeds.shape[1] - 1):
                 hidden_states = self.mamba(inputs_embeds[:, i:i+1], inference_params=self.inference_params) # shape [batch_size, 1, hidden_size]
                 self.inference_params.seqlen_offset += hidden_states.shape[1]
+
+            #end.record()
+            #torch.cuda.synchronize()
+            #print(f"Time to run recurrent forward: {start.elapsed_time(end)}") # takes ~3 for the most part
 
         # the DT expects hidden_states to be shaped like [batch_size, 3, hidden_size] where the action preds are in [:, 1, :] and the state/reward preds are in [:, 2, :], so we just repeat
         hidden_states = hidden_states.repeat(1, 3, 1)

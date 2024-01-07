@@ -37,3 +37,8 @@ You have to install `mujoco-py` and that is a *pain*. Here's what I found:
 1. If you get an error trying to compile `mujoco-py` the first time it runs, try Cython < 3 (which I have in the requirements.txt file). See [this issue](https://github.com/openai/mujoco-py/issues/773) for more info.
 2. If you get an error like `GLIBCXX_3.4.29 not found`, read [this StackOverflow post](https://stackoverflow.com/questions/72205522/glibcxx-3-4-29-not-found). Basically, delete `libstdc++.so.6` (or whatever file is causing the error) from your `anaconda_install_dir/envs/env_name/lib/` folder. 
 If it is coming from a system path, not Anaconda, you probably shouldn't delete it.
+
+### Scratchpad
+
+Okay so the recurrent mode is slower than the normal mode for some reason, even though when the sizes are about the same for text generation, inference for mamba is about as fast as inference for DT
+and it is a lot faster when the graph is cached (like, 6x). 
