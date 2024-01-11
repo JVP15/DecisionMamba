@@ -3,6 +3,7 @@ from functools import partial
 import torch.nn as nn
 
 from mamba_ssm.models.mixer_seq_simple import create_block, _init_weights
+from mamba_ssm.utils.hf import load_state_dict_hf
 
 try:
     from mamba_ssm.ops.triton.layernorm import RMSNorm, layer_norm_fn, rms_norm_fn
@@ -98,3 +99,17 @@ class MixerModel(nn.Module):
                 residual_in_fp32=self.residual_in_fp32,
             )
         return hidden_states
+
+    def load_weights_from_pretrained(self, path):
+        state_dict = load_state_dict_hf(path)
+
+        # get rid of any keys that don't start with 'backbone' (b/c in the lm head model, the mixermodel is called backbone)
+        state_dict = {k: v for k, v in state_dict.items() if k.startswith('backbone')}
+
+        # get rid of the backbone prefix
+        state_dict = {k.replace('backbone.', ''): v for k, v in state_dict.items()}
+
+        # also get rid of the embedding layer
+        state_dict = {k: v for k, v in state_dict.items() if not k.startswith('embedding')}
+
+        self.load_state_dict(state_dict)

@@ -2,13 +2,52 @@ import torch
 
 from transformers import DecisionTransformerModel
 from transformers.modeling_outputs import BaseModelOutput
+from transformers.activations import  ACT2FN
 from models.modeling_mamba import MixerModel
 
 from mamba_ssm.utils.generation import InferenceParams, update_graph_cache
 
+class DTMLP(torch.nn.Module):
+    """MLP w/ silu activation function following llama-2 format"""
+    def __init__(self, input_size, output_size):
+        super().__init__()
+
+        self.lin0 = torch.nn.Linear(input_size, output_size)
+        self.lin1 = torch.nn.Linear(input_size, output_size)
+
+        self.act = ACT2FN['silu']
+
+        self.out = torch.nn.Linear(output_size, output_size)
+
+    def forward(self, x):
+        x0 = self.lin0(x)
+        x1 = self.act(self.lin1(x))
+
+        return self.out(x0 * x1)
+
+
 class TrainableDT(DecisionTransformerModel):
     def __init__(self, config):
         super().__init__(config)
+
+        # replace the linear embeds and projections with MLPs, per https://arxiv.org/abs/2106.01345
+        self.embed_action = DTMLP(config.act_dim, config.hidden_size)
+        self.embed_return = DTMLP(1, config.hidden_size)
+        self.embed_state = DTMLP(config.state_dim, config.hidden_size)
+
+        # note: we don't predict states or returns for the paper
+        # self.predict_state = torch.nn.Linear(config.hidden_size, config.state_dim)
+        # self.predict_action = nn.Sequential(
+        #     *([nn.Linear(config.hidden_size, config.act_dim)] + ([nn.Tanh()] if config.action_tanh else []))
+        # )
+        # self.predict_return = torch.nn.Linear(config.hidden_size, 1)
+
+        # use the MLP instead of the linear layer
+        self.predict_state = DTMLP(config.hidden_size, config.state_dim)
+        self.predict_action = DTMLP(config.hidden_size, config.act_dim)
+        self.predict_return = DTMLP(config.hidden_size, 1)
+
+
 
     def forward(self, **kwargs):
         output = super().forward(**kwargs)
@@ -89,6 +128,10 @@ class TrainableDM(TrainableDT):
         self.last_action = None
         self.last_timestep = None
 
+        if config.hidden_size == 768:
+            print('loading pretrained weights')
+            self.mamba.load_weights_from_pretrained('state-spaces/mamba-130m')
+
     def get_action(self, states, actions, rewards, returns_to_go, timesteps, max_length=None):
         action = super().get_action(states, actions, rewards, returns_to_go, timesteps, max_length=max_length)
 
@@ -118,7 +161,7 @@ class TrainableDM(TrainableDT):
     def _recurrent_forward(self, inputs_embeds):
         # for recurrent generation, inputs embeds should look like: [[RTG_i, S_i, A_null], ...] and have the shape [batch_size, 3, hidden_size]...
         # ... A_null is there b/c the original DT code requires *something* there for an action (even though it isn't even factored into the computation), so we can just skip it
-        inputs_embeds = inputs_embeds[:, :2] # now it is [[RTG_i, S_i], ...], shape [batch_size, 2, hidden_size]
+        inputs_embeds = inputs_embeds[:, :-1] # now it is [[RTG_i, S_i], ...], shape [batch_size, 2, hidden_size]
 
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
@@ -127,7 +170,7 @@ class TrainableDM(TrainableDT):
         # if we are at the beginning of the sequence, we just run the model through long the original sequence is
         if self.inference_params.seqlen_offset == 0:
             hidden_states = self.mamba(inputs_embeds, inference_params=self.inference_params) # shape [batch_size, 2, hidden_size]
-            hidden_states = hidden_states[:, 1:] # shape [batch_size, 1, hidden_size] to match when we are not at the beginning of the sequence
+            hidden_states = hidden_states[:, -1:] # shape [batch_size, 1, hidden_size] to match when we are not at the beginning of the sequence
             self.inference_params.seqlen_offset += inputs_embeds.shape[1]
         else:
             if self.last_action is not None:
