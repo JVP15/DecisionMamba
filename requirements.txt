@@ -1,12 +1,15 @@
 torch>=2.0.0
 transformers
 accelerate
+datasets
+packaging
 mamba-ssm
 gymnasium[mujoco]
 imageio-ffmpeg
 ffmpeg
 imageio
 moviepy
+jupyter
 
 # install these for v3 and below environments
 # mujoco-py
